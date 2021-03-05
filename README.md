@@ -29,7 +29,7 @@ to readable multiline formatting
 # Usage
 
 ```
-./ansible-1line-parser $inputfile [debug]
+./ansible-1line-converter $inputfile [debug]
 ```
 
 will print the new syntax to STDOUT.
