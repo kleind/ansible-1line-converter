@@ -1,0 +1,8 @@
+- name: Install my-replication-$db.cnf aliases in bashrc
+  lineinfile:
+    dest: "/root/.bashrc"
+    line: 'alias {{ item.item.instance }}="mysql --defaults-file=~/.my-replication-{{ item.item.instance }}.cnf"'
+    state: "present"
+    regexp: "^alias {{ item.item.instance }}"
+  when: item.changed
+  with_items: "{{ debian_cnf.results }}"

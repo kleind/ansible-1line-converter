@@ -1,0 +1,8 @@
+- template:
+    src: "replication.cnf.j2"
+    dest: "{{ cluster_path_prefix|default('') }}/etc/mysql-replication/{{ item.instance }}/conf.d/replication.cnf"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+  with_items: "{{ db }}"
+  register: replication_cnf

@@ -1,0 +1,91 @@
+---
+- name: Copy MySQL Replication Config File
+  template:
+    src: "replication.cnf.j2"
+    dest: "{{ cluster_path_prefix|default('') }}/etc/mysql-replication/{{ item.instance }}/conf.d/replication.cnf"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+  with_items: "{{ db }}"
+  register: replication_cnf
+
+- name: restart memcached
+  service:
+    name: "memcached"
+    state: "restarted"
+    enabled: True
+
+- name: Copy MySQL Replication Config File
+  template:
+    src: "replication.cnf.j2"
+    dest: "{{ cluster_path_prefix|default('') }}/etc/mysql-replication/{{ item.instance }}/conf.d/replication.cnf"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+  with_items: "{{ db }}"
+  register: replication_cnf
+- name: Create MySQL Replication Directory
+  file:
+    path: "{{ cluster_path_prefix }}/etc/mysql-replication/{{ item.instance }}"
+    state: directory
+    owner: mysql
+    group: mysql
+    mode: 0755
+  with_items: "{{ docker_db }}"
+- name: Check if replication instance already configured in cluster (on cluster hosts only)
+  command: crm resource status MysqlReplication{{ item.instance }}
+  when: cluster_path_prefix is defined
+  with_items: "{{ db }}"
+  register: cluster_instance
+  failed_when: False
+- name: Create pacemaker resources
+  crm_resource:
+    name: MysqlRepl-{{ item.instance }}
+    agent: mysql
+    params: 'binary="/usr/sbin/mysqld" config="{{ cluster_path_prefix }}/etc/mysql-replication/{{ item.instance }}/my.cnf" datadir="{{ cluster_path_prefix }}/mysql-replication/{{ item.instance }}" pid="/var/run/mysqld/mysqld-replication-{{ item.instance }}.pid" socket="/var/run/mysqld/mysqld-replication-{{ item.instance }}.sock" user=mysql group=mysql log="/var/log/mysql/mysql-replication-{{ item.instance }}.log"'
+    start-op: 'interval=0 timeout=300 on-fail=restart'
+    stop-op: 'interval=0 timeout=180 on-fail=stop'
+    monitor-op: 'interval=53 timeout=8'
+    state: present
+  when: cluster_path_prefix is defined
+  with_items: "{{ db }}"
+- name: Fix UTC Timezone
+  shell: "mysql_tzinfo_to_sql /usr/share/zoneinfo/ | mysql -S /var/run/mysqld/mysqld-replication-{{ item.item.instance }}.sock -uroot mysql --password="
+  when: item.changed
+  with_items: "{{ debian_cnf.results }}"
+- name: Install my-replication-$db.cnf aliases in bashrc
+  lineinfile:
+    dest: "/root/.bashrc"
+    line: "alias {{ item.item.instance }}='mysql --defaults-file=~/.my-replication-{{ item.item.instance }}.cnf'"
+    state: "present"
+    regexp: "^alias {{ item.item.instance }}"
+  when: item.changed
+  with_items: "{{ debian_cnf.results }}"
+- name: Create pacemaker resources
+  crm_resource:
+    name: MysqlRepl-{{ item.instance }}
+    agent: mysql
+    params: "binary='/usr/sbin/mysqld' config='{{ cluster_path_prefix }}/etc/mysql-replication/{{ item.instance }}/my.cnf' datadir='{{ cluster_path_prefix }}/mysql-replication/{{ item.instance }}' pid='/var/run/mysqld/mysqld-replication-{{ item.instance }}.pid' socket='/var/run/mysqld/mysqld-replication-{{ item.instance }}.sock' user=mysql group=mysql log='/var/log/mysql/mysql-replication-{{ item.instance }}.log'"
+    start-op: 'interval=0 timeout=300 on-fail=restart'
+    stop-op: 'interval=0 timeout=180 on-fail=stop'
+    monitor-op: 'interval=53 timeout=8'
+    state: present
+  when: cluster_path_prefix is defined
+  with_items: "{{ db }}"
+- name: Install my-replication-$db.cnf aliases in bashrc
+  lineinfile:
+    dest: "/root/.bashrc"
+    line: "alias {{ item.item.instance }}='mysql --defaults-file=~/.my-replication-{{ item.item.instance }}.cnf'"
+    state: "present"
+    regexp: "^alias {{ item.item.instance }}"
+    line2: "bla=blub foo=bar"
+  when: item.changed
+  with_items: "{{ debian_cnf.results }}"
+- name: Install my-replication-$db.cnf aliases in bashrc
+  lineinfile:
+    dest: "/root/.bashrc"
+    line: 'alias {{ item.item.instance }}="mysql --defaults-file=~/.my-replication-{{ item.item.instance }}.cnf"'
+    state: "present"
+    regexp: "^alias {{ item.item.instance }}"
+  when: item.changed
+  with_items: "{{ debian_cnf.results }}"

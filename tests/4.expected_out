@@ -1,0 +1,11 @@
+- name: Create pacemaker resources
+  crm_resource:
+    name: MysqlRepl-{{ item.instance }}
+    agent: mysql
+    params: 'binary="/usr/sbin/mysqld" config="{{ cluster_path_prefix }}/etc/mysql-replication/{{ item.instance }}/my.cnf" datadir="{{ cluster_path_prefix }}/mysql-replication/{{ item.instance }}" pid="/var/run/mysqld/mysqld-replication-{{ item.instance }}.pid" socket="/var/run/mysqld/mysqld-replication-{{ item.instance }}.sock" user=mysql group=mysql log="/var/log/mysql/mysql-replication-{{ item.instance }}.log"'
+    start-op: 'interval=0 timeout=300 on-fail=restart'
+    stop-op: 'interval=0 timeout=180 on-fail=stop'
+    monitor-op: 'interval=53 timeout=8'
+    state: present
+  when: cluster_path_prefix is defined
+  with_items: "{{ db }}"

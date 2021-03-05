@@ -1,0 +1,198 @@
+#!/bin/bash
+
+tmpfile=$(mktemp)
+
+if [ "$2" = "debug" ]; then
+    show_debug_output=true
+else
+    show_debug_output=false
+fi
+
+debug() {
+    if $show_debug_output; then
+        echo debug: $*
+    fi
+}
+
+write_to_tmp_file() {
+   debug "$FUNCNAME writing $* to $tmpfile"
+   echo "$*" >> $tmpfile
+}
+
+IFS=''
+test -f $1 && cat $1 | while read -r orig; do
+    if echo $orig | grep -qE "^(\s+|- )\S+:\s+[^'\"]\S+=" ; then
+        if echo $orig|grep -qE "^\s+(shell|command)"; then
+            write_to_tmp_file $orig
+            continue
+        fi
+
+        module_done=false
+        module_written_to_file=false
+        name_done=false
+        value_done=false
+        name_and_value_written_to_file=false
+        first_char_of_value_checked=false
+        quotation=""
+        look_for_closing_bracket=false
+        # charloop
+        echo "$orig" | while read -n 1 -r c; do
+
+            # module
+            if ! $module_done; then
+            debug "entering module"
+                case "$c" in
+                    :)
+                        debug "module matched ':'($c)"
+                        module_done=true
+                        continue
+                    ;;
+                    " ")
+                        debug "module matched ' '($c)"
+                        indent="${indent}${c}"
+                        moduleindent="${moduleindent}${c}"
+                        debug "indent: ${indent}"
+                        debug "moduleindent: ${moduleindent}"
+                        continue
+                    ;;
+                    "-")
+                        debug "module matched '-'($c)"
+                        indent="${indent}${c/-/ }"
+                        moduleindent="${c}"
+                        debug "indent: ${indent}"
+                        debug "moduleindent: ${moduleindent}"
+                        continue
+                    ;;
+                    *)
+                        debug "module matched wildcard($c)"
+                        module=${module}${c}
+                        continue
+                    ;;
+                esac
+            fi
+            debug "module_written_to_file: $module_written_to_file module: $module"
+            if ! $module_written_to_file; then
+                if $module_done; then
+                    write_to_tmp_file "${moduleindent}${module}:"
+                    module_written_to_file=true
+                fi
+            fi
+            # /module
+
+            # name
+            if ! $name_done -a $module_done; then
+            debug "entering name"
+                case "$c" in
+                    =)
+                        debug "name matched '='($c)"
+                        name_done=true
+                        trimmed_name=$(echo $name|sed 's/[: ]\+//')
+                        debug "name >$name< trimmed to >$trimmed_name<"
+                    ;;
+                    *)
+                        debug "name matched wildcard($c)"
+                        name=${name}${c}
+                        continue
+                    ;;
+                esac
+            fi
+            # /name
+
+            # value
+            if ! $value_done -a $name_done -a $module_done; then
+                debug "entering value with c >$c<"
+                if ! $first_char_of_value_checked; then
+                    if [ "$c" = " " -o "$c" = "=" ]; then
+                        debug "skipping first char of value since it is either whitespace or an equal sign"
+                        continue
+                    fi
+                    debug "first char of value was not checked yet"
+                    case "$c" in
+                        \'|\")
+                            quotation=$c
+                        ;;
+                    esac
+                    first_char_of_value_checked=true
+                    debug "quotation: >$quotation<"
+                    if [ -n "$quotation" ]; then
+                        continue
+                    fi
+                else
+                    debug "first char of value already checked"
+                fi
+                # no quotes
+                if [ -z "$quotation" ]; then
+                    debug "entering non-quotation mode"
+                    value_ending_char=" "
+                else #quotes
+                    debug "entering quotation mode"
+                    value_ending_char=$quotation
+                fi
+                if [ "$c" = "{" ]; then
+                    debug "entering bracket mode"
+                    look_for_closing_bracket=true
+                fi
+                debug "end: $value_ending_char, value: $value, look for: $look_for_closing_bracket"
+                case "$c" in
+                    $value_ending_char|"")
+                        debug "c is value ending char"
+                        if $look_for_closing_bracket ; then
+                            debug "matched value ending char, looking for closing bracket"
+                            debug "looking for closing bracket true"
+                            if [ "$c" = "}" ]; then
+                                value=${value}${c}${c}
+                                look_for_closing_bracket=false
+                            else
+                                debug "matched value ending char, not looking for closing bracket"
+                                value=${value}${c}
+                            fi
+                        else
+                            debug "value is done"
+                            if echo $value | grep -qE "^(y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$"; then
+                                debug not quoting booleans
+                                quotes=""
+                            else
+                                quotes=${quotation:-\"}
+                            fi
+                            write_to_tmp_file "${indent}${indent}${trimmed_name}: ${quotes}${value}${quotes}"
+                            name_done=false
+                            first_char_of_value_checked=false
+                            look_for_closing_bracket=false
+                            unset name value value_ending_char quotation
+                        fi
+                    ;;
+                    *)
+                        if $look_for_closing_bracket ; then
+                            if [ "$c" = "}" ]; then
+                                debug "setting look for to false"
+                                look_for_closing_bracket=false
+                            fi
+                        fi
+                        value=${value}${c}
+                    ;;
+                esac
+            fi
+            # /value
+            debug "module_done: $module_done, module: $module"
+            debug "name_done: $name_done, name: $name"
+            debug "end of char loop"
+            debug ""
+        # /charloop
+        done
+    else
+        # line not in old format
+        write_to_tmp_file $orig
+    fi
+# /lineloop
+done
+
+if $show_debug_output; then
+    echo
+    echo debug: orig:
+    cat $1
+    echo /debug
+    echo
+fi
+
+cat $tmpfile
+rm -f $tmpfile

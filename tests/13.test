@@ -1,0 +1,2 @@
+- name: Set MaxRequestWorkers
+  replace: path=/etc/apache2/mods-available/mpm_prefork.conf regexp='(^|\W)MaxRequestWorkers.*150$' replace="MaxRequestWorkers 512"

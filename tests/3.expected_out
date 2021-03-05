@@ -1,0 +1,6 @@
+- name: Check if replication instance already configured in cluster (on cluster hosts only)
+  command: crm resource status MysqlReplication{{ item.instance }}
+  when: cluster_path_prefix is defined
+  with_items: "{{ db }}"
+  register: cluster_instance
+  failed_when: False
